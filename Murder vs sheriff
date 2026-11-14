@@ -1,0 +1,474 @@
+--[[
+    Derek Hub  |  Murder Mystery 2
+    v1.0
+    - Auto Farm (coins + underground)
+    - Auto Shoot / Auto Throw / Kill All
+    - ESP (roles, nombres, distancia, coins)
+    - Hitbox que sigue al jugador (sin bugs) + Auto Kill
+    - Fling Murderer
+--]]
+
+local Players    = game:GetService("Players")
+local RS         = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UIS        = game:GetService("UserInputService")
+local LP         = Players.LocalPlayer
+
+local ACCENT  = Color3.fromRGB(255, 168, 62)
+local BG      = Color3.fromRGB(22, 22, 26)
+local SIDE    = Color3.fromRGB(15, 15, 18)
+local CARD    = Color3.fromRGB(32, 32, 38)
+local TXT     = Color3.fromRGB(238, 238, 242)
+local SUB     = Color3.fromRGB(140, 140, 152)
+local RED     = Color3.fromRGB(255, 82, 82)
+local BLUE    = Color3.fromRGB(82, 156, 255)
+local GREEN   = Color3.fromRGB(90, 220, 120)
+
+local CONN = {}
+local function track(c) table.insert(CONN, c) return c end
+
+local GUI_PARENT = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
+if GUI_PARENT:FindFirstChild("DerekHub") then GUI_PARENT.DerekHub:Destroy() end
+
+local function new(class, props, parent)
+    local o = Instance.new(class)
+    for k, v in pairs(props or {}) do o[k] = v end
+    if parent then o.Parent = parent end
+    return o
+end
+
+local function corner(obj, r)
+    new("UICorner", { CornerRadius = UDim.new(0, r or 8) }, obj)
+end
+
+local function stroke(obj, color, t)
+    new("UIStroke", { Color = color or Color3.fromRGB(48, 48, 56), Thickness = t or 1 }, obj)
+end
+
+-- ============================================================
+--  NOTIFICACIONES
+-- ============================================================
+local notifLayer
+local function notify(text, color)
+    if not notifLayer then return end
+    local f = new("Frame", {
+        Size = UDim2.fromOffset(230, 40), BackgroundColor3 = CARD,
+        Position = UDim2.new(0, 10, 1, -60), AnchorPoint = Vector2.new(0, 1),
+    }, notifLayer)
+    corner(f, 8); stroke(f, color or ACCENT)
+    new("TextLabel", {
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium,
+        TextSize = 12, TextColor3 = TXT, Text = text, TextWrapped = true,
+    }, f)
+    task.delay(2.4, function()
+        local tw = game:GetService("TweenService"):Create(f, TweenInfo.new(0.35), {
+            BackgroundTransparency = 1, Position = UDim2.new(0, -260, 1, -60),
+        })
+        tw:Play(); tw.Completed:Wait(); f:Destroy()
+    end)
+end
+
+-- ============================================================
+--  VENTANA
+-- ============================================================
+local vp = workspace.CurrentCamera.ViewportSize
+local W = math.clamp(vp.X * 0.92, 300, 430)
+local H = math.clamp(vp.Y * 0.62, 300, 360)
+
+local gui = new("ScreenGui", {
+    Name = "DerekHub", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, GUI_PARENT)
+
+local win = new("Frame", {
+    Size = UDim2.fromOffset(W, H), Position = UDim2.new(0.5, -W / 2, 0.5, -H / 2),
+    BackgroundColor3 = BG, BorderSizePixel = 0,
+}, gui)
+corner(win, 12); stroke(win, Color3.fromRGB(52, 52, 62), 1)
+
+local topBar = new("Frame", {
+    Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(28, 28, 33), BorderSizePixel = 0,
+}, win)
+corner(topBar, 12)
+new("Frame", { Size = UDim2.new(1, 0, 0, 12), Position = UDim2.new(0, 0, 1, -12), BackgroundColor3 = topBar.BackgroundColor3, BorderSizePixel = 0 }, topBar)
+
+new("TextLabel", {
+    Size = UDim2.fromOffset(120, 18), Position = UDim2.fromOffset(12, 7), BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = TXT, TextXAlignment = Enum.TextXAlignment.Left,
+    Text = "Derek Hub",
+}, topBar)
+new("TextLabel", {
+    Size = UDim2.fromOffset(46, 15), Position = UDim2.fromOffset(84, 9), BackgroundColor3 = Color3.fromRGB(48, 48, 56),
+    Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = SUB, Text = "v1.0", BorderSizePixel = 0,
+}, topBar)
+corner(topBar:FindFirstChildWhichIsA("TextLabel", true) and topBar:GetChildren()[3] or topBar, 6)
+
+local pill = new("TextButton", {
+    Size = UDim2.fromOffset(104, 20), Position = UDim2.new(1, -168, 0, 10),
+    BackgroundColor3 = ACCENT, BorderSizePixel = 0, AutoButtonColor = false,
+    Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Color3.fromRGB(30, 20, 5), Text = "SUMMER EVENT",
+}, topBar)
+corner(pill, 10)
+
+local function topBtn(txt, x, cb)
+    local b = new("TextButton", {
+        Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, x, 0, 9),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 47), BorderSizePixel = 0,
+        Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = SUB, Text = txt, AutoButtonColor = false,
+    }, topBar)
+    corner(b, 6)
+    b.MouseButton1Click:Connect(cb)
+    return b
+end
+local minBtn = topBtn("—", -58, function() end)
+topBtn("✕", -32, function() gui:Destroy() end)
+
+-- Arrastre
+local dragging, dragStart, startPos
+topBar.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = i.Position; startPos = win.Position
+    end
+end)
+track(UIS.InputChanged:Connect(function(i)
+    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local d = i.Position - dragStart
+        win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    end
+end))
+track(UIS.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end))
+
+-- ============================================================
+--  LAYOUT: SIDEBAR + CONTENIDO
+-- ============================================================
+local side = new("Frame", {
+    Size = UDim2.new(0, 96, 1, -40), Position = UDim2.fromOffset(0, 40), BackgroundColor3 = SIDE, BorderSizePixel = 0,
+}, win)
+new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, side)
+new("UIPadding", { PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, side)
+
+local content = new("Frame", {
+    Size = UDim2.new(1, -96, 1, -40), Position = UDim2.fromOffset(96, 40), BackgroundTransparency = 1,
+}, win)
+
+local scroll = new("ScrollingFrame", {
+    Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
+    ScrollBarThickness = 3, ScrollBarImageColor3 = Color3.fromRGB(70, 70, 80), CanvasSize = UDim2.new(),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, content)
+new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, scroll)
+new("UIPadding", { PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingBottom = UDim.new(0, 12) }, scroll)
+
+notifLayer = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 50 }, gui)
+
+-- Componentes
+local function section(text)
+    local l = new("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
+        TextSize = 12, TextColor3 = TXT, TextXAlignment = Enum.TextXAlignment.Left, Text = text,
+    }, scroll)
+    return l
+end
+
+local function row(title, desc, rightWidth)
+    local f = new("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = CARD, BorderSizePixel = 0 }, scroll)
+    corner(f, 8); stroke(f)
+    new("TextLabel", {
+        Size = UDim2.new(1, -(rightWidth or 52), 0, 18), Position = UDim2.fromOffset(10, 7), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = TXT, TextXAlignment = Enum.TextXAlignment.Left, Text = title,
+    }, f)
+    new("TextLabel", {
+        Size = UDim2.new(1, -(rightWidth or 52), 0, 14), Position = UDim2.fromOffset(10, 24), BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham, TextSize = 9, TextColor3 = SUB, TextXAlignment = Enum.TextXAlignment.Left,
+        Text = desc or "", TextTruncate = Enum.TextTruncate.AtEnd,
+    }, f)
+    return f
+end
+
+local function toggle(title, desc, default, cb)
+    local f = row(title, desc, 52)
+    local state = default or false
+    local track_ = new("Frame", {
+        Size = UDim2.fromOffset(38, 20), Position = UDim2.new(1, -48, 0.5, -10),
+        BackgroundColor3 = Color3.fromRGB(58, 58, 68), BorderSizePixel = 0,
+    }, f)
+    corner(track_, 10)
+    local knob = new("Frame", { Size = UDim2.fromOffset(16, 16), Position = UDim2.fromOffset(2, 2), BackgroundColor3 = Color3.fromRGB(230, 230, 235), BorderSizePixel = 0 }, track_)
+    corner(knob, 8)
+
+    local function apply(v)
+        state = v
+        game:GetService("TweenService"):Create(track_, TweenInfo.new(0.15), { BackgroundColor3 = v and ACCENT or Color3.fromRGB(58, 58, 68) }):Play()
+        game:GetService("TweenService"):Create(knob, TweenInfo.new(0.15), { Position = v and UDim2.fromOffset(20, 2) or UDim2.fromOffset(2, 2) }):Play()
+        if cb then pcall(cb, v) end
+    end
+
+    local hit = new("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "" }, f)
+    hit.MouseButton1Click:Connect(function() apply(not state) end)
+    apply(state)
+    return apply
+end
+
+local function slider(title, desc, min, max, default, cb)
+    local f = new("Frame", { Size = UDim2.new(1, 0, 0, 56), BackgroundColor3 = CARD, BorderSizePixel = 0 }, scroll)
+    corner(f, 8); stroke(f)
+    new("TextLabel", {
+        Size = UDim2.new(1, -50, 0, 18), Position = UDim2.fromOffset(10, 7), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = TXT, TextXAlignment = Enum.TextXAlignment.Left, Text = title,
+    }, f)
+    local val = new("TextLabel", {
+        Size = UDim2.fromOffset(38, 18), Position = UDim2.new(1, -48, 0, 7), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = ACCENT, TextXAlignment = Enum.TextXAlignment.Right, Text = tostring(default),
+    }, f)
+    new("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 12), Position = UDim2.fromOffset(10, 24), BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham, TextSize = 9, TextColor3 = SUB, TextXAlignment = Enum.TextXAlignment.Left,
+        Text = desc or "", TextTruncate = Enum.TextTruncate.AtEnd,
+    }, f)
+
+    local bar = new("Frame", { Size = UDim2.new(1, -20, 0, 4), Position = UDim2.new(0, 10, 1, -12), BackgroundColor3 = Color3.fromRGB(58, 58, 68), BorderSizePixel = 0 }, f)
+    corner(bar, 2)
+    local fill = new("Frame", { Size = UDim2.new((default - min) / (max - min), 0, 1, 0), BackgroundColor3 = ACCENT, BorderSizePixel = 0 }, bar)
+    corner(fill, 2)
+    local dot = new("Frame", { Size = UDim2.fromOffset(10, 10), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = Color3.fromRGB(240, 240, 245), BorderSizePixel = 0 }, fill)
+    corner(dot, 5)
+
+    local value = default
+    local dragging_ = false
+    local function setFromX(x)
+        local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        value = math.floor(min + (max - min) * rel + 0.5)
+        val.Text = tostring(value)
+        fill.Size = UDim2.new(rel, 0, 1, 0)
+        if cb then pcall(cb, value) end
+    end
+
+    local hit = new("TextButton", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 1, -22), BackgroundTransparency = 1, Text = "" }, f)
+    hit.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging_ = true; setFromX(i.Position.X)
+        end
+    end)
+    track(UIS.InputChanged:Connect(function(i)
+        if dragging_ and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            setFromX(i.Position.X)
+        end
+    end))
+    track(UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging_ = false end
+    end))
+    return function(v) value = v; val.Text = tostring(v); fill.Size = UDim2.new((v - min) / (max - min), 0, 1, 0) end
+end
+
+local function button(title, desc, cb)
+    local f = row(title, desc, 12)
+    f.BackgroundColor3 = Color3.fromRGB(40, 40, 47)
+    local hit = new("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "" }, f)
+    hit.MouseButton1Click:Connect(function()
+        local ok, err = pcall(cb)
+        notify(ok and (title .. " ejecutado") or ("Error: " .. tostring(err)), ok and GREEN or RED)
+    end)
+    return f
+end
+
+-- ============================================================
+--  SISTEMA DE PESTAÑAS
+-- ============================================================
+local pages = {}
+local currentBtn
+local function addPage(name, icon, order)
+    local btn = new("TextButton", {
+        Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = SIDE, BorderSizePixel = 0, AutoButtonColor = false,
+        Font = Enum.Font.GothamMedium, TextSize = 10, TextColor3 = SUB, Text = icon .. "  " .. name,
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = order,
+    }, side)
+    corner(btn, 7)
+    new("UIPadding", { PaddingLeft = UDim.new(0, 6) }, btn)
+
+    local page = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false }, scroll)
+    page.Size = UDim2.fromScale(1, 0)
+    new("UIListLayout", { Padding = UDim.new(0, 8) }, page)
+    pages[name] = page
+
+    btn.MouseButton1Click:Connect(function()
+        for _, p in pairs(pages) do p.Visible = false end
+        page.Visible = true
+        if currentBtn then
+            currentBtn.BackgroundColor3 = SIDE; currentBtn.TextColor3 = SUB
+        end
+        btn.BackgroundColor3 = Color3.fromRGB(42, 42, 50); btn.TextColor3 = ACCENT
+        currentBtn = btn
+    end)
+    return page
+end
+
+local function selectPage(name)
+    for n, p in pairs(pages) do p.Visible = (n == name) end
+end
+
+-- ============================================================
+--  REMOTES / ROLES
+-- ============================================================
+local remotes = RS:FindFirstChild("Remotes") or RS
+local function findRemote(n)
+    for _, o in ipairs(remotes:GetDescendants()) do
+        if o:IsA("RemoteEvent") and o.Name:lower() == n:lower() then return o end
+    end
+    return nil
+end
+local ShootGun   = findRemote("ShootGun")
+local ThrowKnife = findRemote("ThrowKnife")
+local HitPlayer  = findRemote("HitPlayer") or findRemote("Hit")
+
+local function getRole(plr)
+    local packs = { plr.Character, plr:FindFirstChild("Backpack") }
+    for _, c in ipairs(packs) do
+        if c then
+            for _, t in ipairs(c:GetChildren()) do
+                if t:IsA("Tool") then
+                    local n = t.Name:lower()
+                    if n:find("knife") then return "Murderer", RED end
+                    if n:find("gun") then return "Sheriff", BLUE end
+                end
+            end
+        end
+    end
+    return "Innocent", GREEN
+end
+
+local function alive(plr)
+    local c = plr.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    return c and h and h.Health > 0
+end
+
+local function nearest(skipMurdererOnly)
+    local best, dist = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and alive(p) then
+            local ok = true
+            if skipMurdererOnly then
+                local r = getRole(p)
+                ok = (r == "Murderer")
+            end
+            if ok then
+                local d = (p.Character.HumanoidRootPart.Position - LP.Character.HumanoidRootPart.Position).Magnitude
+                if d < dist then best, dist = p, d end
+            end
+        end
+    end
+    return best, dist
+end
+
+-- ============================================================
+--  ESP
+-- ============================================================
+local cfg = { esp = false, espMurderer = true, espSheriff = true, espInnocent = false, espCoin = false, espDist = 250 }
+local espData = {}
+
+local function clearESP()
+    for plr, d in pairs(espData) do
+        if d.hl then d.hl:Destroy() end
+        if d.bg then d.bg:Destroy() end
+        espData[plr] = nil
+    end
+end
+
+local function buildESP(plr)
+    local char = plr.Character
+    local head = char and char:FindFirstChild("Head")
+    if not head then return end
+
+    local role, color = getRole(plr)
+    local hl = new("Highlight", {
+        Adornee = char, FillColor = color, FillTransparency = 0.72,
+        OutlineColor = color, OutlineTransparency = 0, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+    }, char)
+
+    local bg = new("BillboardGui", {
+        Size = UDim2.fromOffset(180, 34), StudsOffset = Vector3.new(0, 2.6, 0), AlwaysOnTop = true, MaxDistance = cfg.espDist,
+    }, head)
+    local lbl = new("TextLabel", {
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
+        TextSize = 11, TextColor3 = color, TextStrokeTransparency = 0.4, Text = "",
+    }, bg)
+
+    espData[plr] = { hl = hl, bg = bg, lbl = lbl }
+end
+
+track(RunService.Heartbeat:Connect(function()
+    if not cfg.esp then
+        if next(espData) then clearESP() end
+        return
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LP then continue end
+        local d = espData[plr]
+        local char = plr.Character
+        if not char or not char:FindFirstChild("Head") then
+            if d then d.hl:Destroy(); d.bg:Destroy(); espData[plr] = nil end
+            continue
+        end
+        if not d then buildESP(plr); d = espData[plr] end
+        if d then
+            local role, color = getRole(plr)
+            local visible = (role == "Murderer" and cfg.espMurderer)
+                or (role == "Sheriff" and cfg.espSheriff)
+                or (role == "Innocent" and cfg.espInnocent)
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local dist = hrp and math.floor((hrp.Position - workspace.CurrentCamera.CFrame.Position).Magnitude) or 0
+            d.hl.Enabled = visible
+            d.bg.Enabled = visible
+            d.hl.FillColor = color; d.hl.OutlineColor = color
+            d.lbl.TextColor3 = color
+            d.lbl.Text = string.format("%s | %d m", role, dist)
+            d.bg.MaxDistance = cfg.espDist
+            if d.hl.Adornee ~= char then d.hl.Adornee = char end
+            if d.bg.Parent ~= char:FindFirstChild("Head") and char:FindFirstChild("Head") then
+                d.bg.Parent = char:FindFirstChild("Head")
+            end
+        end
+    end
+end))
+
+-- Coin ESP
+local coinHL = {}
+track(RunService.Heartbeat:Connect(function()
+    if not cfg.espCoin then
+        for _, h in pairs(coinHL) do h:Destroy() end
+        coinHL = {}
+        return
+    end
+    for _, o in ipairs(workspace:GetDescendants()) do
+        if o:IsA("BasePart") and (o.Name:lower():find("coin")) and not coinHL[o] then
+            local h = new("Highlight", {
+                Adornee = o, FillColor = Color3.fromRGB(255, 210, 60), FillTransparency = 0.4,
+                OutlineColor = Color3.fromRGB(255, 230, 120), DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+            }, o)
+            coinHL[o] = h
+        end
+    end
+    for part, h in pairs(coinHL) do
+        if not part.Parent then h:Destroy(); coinHL[part] = nil end
+    end
+end))
+
+-- ============================================================
+--  HITBOX QUE SIGUE AL JUGADOR (sin bugs)
+-- ============================================================
+local hb = { on = false, size = 6, autoKill = false, part = nil, cooldown = {} }
+
+local function destroyHB()
+    if hb.part then hb.part:Destroy(); hb.part = nil end
+end
+
+local function buildHB()
+    destroyHB()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local p = new("Part", {
+ 
